@@ -1,6 +1,6 @@
 {
     "commands": {
-        "test": "main:pass"
+        "test": "main: test"
     },
     "events": {}
 }
