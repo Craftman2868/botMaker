@@ -14,12 +14,15 @@ class Config:
         self.data = readJson(self.path)
     def save(self):
         writeJson(self.path, self.data)
+    def clear(self):
+        self.data = {}
+        self.save()
     def get(self, key):
         self.update()
         return self.data[key]
     __getitem__ = get
     def set(self, key, value):
-        if value != self.get(key):
+        if key not in self.data or value != self.get(key):
             self.data[key] = value
             self.save()
     __setitem__ = set

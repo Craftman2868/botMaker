@@ -1,7 +1,9 @@
 {
     "prefix": ";",
     "commands": {
-        "test": "main: test"
+        "test": "main:test",
+        "config": "main:config",
+        "clearcfg": "main:clearConfig"
     },
     "events": {}
 }
