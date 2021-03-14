@@ -6,6 +6,20 @@ from os.path import relpath, realpath
 import sys
 from discord import Client
 
+class Command:
+    def __init__(self, bot, cmd, args, author, message):
+        self.bot = bot
+        self.cmd = cmd
+        self.args = args
+        self.author = author
+        self.message = message
+    def delete(self):
+        self.bot.action("delete")
+    def reply(self, *args):
+        self.bot.action("reply", *args)
+    def react(self, *reactions):
+        self.bot.action("react", *reactions)
+
 class Bot(Client):
     def __init__(self, path, token=None):
         self.path = realpath(path)
@@ -78,16 +92,17 @@ class Bot(Client):
         super().run(self.token)
     def action(self, name, *args):
         self._actions.append((name, args))
+    __call__ = action
     async def on_message(self, message):
         if message.content.startswith(self.prefix):
             msg = message.content[len(self.prefix):]
             for cmd in self.commands:
                 if msg.startswith(cmd+" "):
-                    msg = msg[len(self.prefix)+1:]
-                    self.runCommand(cmd, *msg.split(" "))
+                    msg = msg[len(cmd)+1:]
+                    self.runCommand(cmd, Command(self, cmd, msg.split(" "), message.author, message.content))
                     break
                 elif msg == cmd:
-                    self.runCommand(cmd)
+                    self.runCommand(cmd, Command(self, cmd, [], message.author, message.content))
                     break
             else:
                 return
@@ -97,5 +112,10 @@ class Bot(Client):
                 args = action[1]
                 if name == "reply":
                     await message.channel.send(" ".join(args))
+                elif name == "delete":
+                    await message.delete()
+                elif name == "react":
+                    for r in args:
+                        await message.add_reaction(r)
             
             self._actions = []

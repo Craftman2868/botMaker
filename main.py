@@ -15,17 +15,8 @@ try:
 except TypeError as e:
     if e.args[0] == "'token' argument is requied if bot don't exist":
         print("'token' argument is requied if bot don't exist")
+        exit()
     else:
         raise
 
 bot.run()
-
-# try:
-#     while True:
-#         command = input("> ").split()
-#         args = command[1:]
-#         command = command[0].lower()
-#         if command in ["quit", "q", "exit"]:
-#             break
-# except KeyboardInterrupt:
-#     pass
