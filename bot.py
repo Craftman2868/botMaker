@@ -4,8 +4,9 @@ from error import ConfigError, FunctionError, CommandError
 from importlib import import_module
 from os.path import relpath, realpath
 import sys
+from discord import Client
 
-class Bot:
+class Bot(Client):
     def __init__(self, path, token=None):
         self.path = realpath(path)
         sys.path.append(self.path)
@@ -16,17 +17,30 @@ class Bot:
             mkdir(self.join("events"))
             mkdir(self.join("commands"))
             mkdir(self.join("data"))
-            self.config = Config(self.join("data", "config.json"))
-            self.manifest = Config(self.join("data", "manifest.json"), {"commands": [], "events": []})
-            mkfile(self.join("data", "token.txt"), token)
+            self.token = token
+            mkfile(self.join("data", "token.txt"), self.token)
             mkdir(self.join("src"))
         elif not isdir(self.path):
             raise NotADirectoryError(f"'{self.path}' isn't a directory")
         else:
-            self.config = Config(self.join("data", "config.json"))
-            self.manifest = Config(self.join("data", "manifest.json"), {"commands": [], "events": []})
-        
+            with open(self.join("data", "token.txt"), "r") as f: self.token = f.read()
+        self.config = Config(self.join("data", "config.json"))
+        self.manifest = Config(self.join("data", "manifest.json"), {"prefix": "<Your prefix>", "commands": {}, "events": {}})
+
+        self.commands = self.manifest["commands"]
+        self.events = self.manifest["events"]
+
         self.functionCache = {}
+
+        self._actions = []
+
+        super().__init__()
+    @property
+    def prefix(self):
+        return self.manifest["prefix"]
+    @prefix.setter
+    def prefix(self, value):
+        self.manifest["prefix"] = value
     def join(self, *paths):
         return join(self.path, *paths)
     def getFunction(self, name):
@@ -55,8 +69,33 @@ class Bot:
         
         return f
     def runFunction(self, name, *args, **kwargs):
-        self.getFunction(name)(self, *args, **kwargs)
+        return self.getFunction(name)(self, *args, **kwargs)
     def runCommand(self, name, *args):
         if name not in self.manifest["commands"]:
             raise CommandError(f"Command '{name}' not found")
         return self.runFunction(self.manifest["commands"][name], *args)
+    def run(self):
+        super().run(self.token)
+    def action(self, name, *args):
+        self._actions.append((name, args))
+    async def on_message(self, message):
+        if message.content.startswith(self.prefix):
+            msg = message.content[len(self.prefix):]
+            for cmd in self.commands:
+                if msg.startswith(cmd+" "):
+                    msg = msg[len(self.prefix)+1:]
+                    self.runCommand(cmd, *msg.split(" "))
+                    break
+                elif msg == cmd:
+                    self.runCommand(cmd)
+                    break
+            else:
+                return
+            
+            for action in self._actions:
+                name = action[0]
+                args = action[1]
+                if name == "reply":
+                    await message.channel.send(" ".join(args))
+            
+            self._actions = []

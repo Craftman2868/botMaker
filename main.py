@@ -18,7 +18,7 @@ except TypeError as e:
     else:
         raise
 
-bot.runCommand("test")
+bot.run()
 
 # try:
 #     while True:
