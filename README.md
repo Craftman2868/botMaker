@@ -49,6 +49,7 @@ python main.py <path> [token]
 ```
 
 path: chemin du dossier où se trouve le bot (sera créer automatiquement s'il n'existe pas)
+
 token: token du bot discord (obligatoire pour créer le bot)
 
 > Référence du manifest.json
