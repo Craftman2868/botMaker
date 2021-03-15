@@ -15,3 +15,6 @@ def config(bot, message):
 def clearConfig(bot, message):
     bot.config.clear()
     message.reply("La configuration à bien été effacée !")
+
+def on_message(bot, message):
+    print(message.message)

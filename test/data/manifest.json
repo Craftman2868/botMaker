@@ -5,5 +5,7 @@
         "config": "main:config",
         "clearcfg": "main:clearConfig"
     },
-    "events": {}
+    "events": {
+        "message": "main: on_message"
+    }
 }

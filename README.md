@@ -14,7 +14,9 @@ test/data/manifest.json
         "test2": "main: commande_test_2",
         "test3": "main:test3Command"
     },
-    "events": {}
+    "events": {
+        "message": "events: on_message"
+    }
 }
 ```
 
@@ -34,6 +36,13 @@ def commande_test_2(bot, msg):
 def test3Command(bot, m):
     msg.delete()
     msg.reply("j'ai supprimé ton message !")
+```
+
+test/src/events.py
+
+```python
+def on_message(bot, msg):
+    msg.react("👋")
 ```
 
 terminal
@@ -58,4 +67,4 @@ python main.py <path> [token]
 |---|----|-----------|
 |prefix|string|préfixe du bot|
 |commands|dict|commandes du bot|
-|event|dict|éventements du bot (pas encore fonctionnel)|
+|event|dict|éventements du bot|

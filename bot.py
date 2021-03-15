@@ -6,11 +6,9 @@ from os.path import relpath, realpath
 import sys
 from discord import Client
 
-class Command:
-    def __init__(self, bot, cmd, args, author, message):
+class Message:
+    def __init__(self, bot, author, message):
         self.bot = bot
-        self.cmd = cmd
-        self.args = args
         self.author = author
         self.message = message
     def delete(self):
@@ -19,6 +17,12 @@ class Command:
         self.bot.action("reply", *args)
     def react(self, *reactions):
         self.bot.action("react", *reactions)
+
+class Command(Message):
+    def __init__(self, bot, cmd, author, message):
+        super().__init__(bot, author, message)
+        self.cmd = cmd
+        self.args = message[len(self.bot.prefix)+len(self.cmd):].split(" ")
 
 class Bot(Client):
     def __init__(self, path, token=None):
@@ -93,16 +97,35 @@ class Bot(Client):
     def action(self, name, *args):
         self._actions.append((name, args))
     __call__ = action
+    def executeEvent(self, name, *args):
+        if name in self.events:
+           self.runFunction(self.events[name], *args)
     async def on_message(self, message):
+        if message.author == self.user:
+            return
+
+        self.executeEvent("message", Message(self, message.author, message.content))
+        for action in self._actions:
+            name = action[0]
+            args = action[1]
+            if name == "reply":
+                await message.channel.send(" ".join(args))
+            elif name == "delete":
+                await message.delete()
+            elif name == "react":
+                for r in args:
+                    await message.add_reaction(r)
+
+        self._actions = []
         if message.content.startswith(self.prefix):
             msg = message.content[len(self.prefix):]
             for cmd in self.commands:
                 if msg.startswith(cmd+" "):
                     msg = msg[len(cmd)+1:]
-                    self.runCommand(cmd, Command(self, cmd, msg.split(" "), message.author, message.content))
+                    self.runCommand(cmd, Command(self, cmd, message.author, message.content))
                     break
                 elif msg == cmd:
-                    self.runCommand(cmd, Command(self, cmd, [], message.author, message.content))
+                    self.runCommand(cmd, Command(self, cmd, message.author, message.content))
                     break
             else:
                 return
@@ -119,3 +142,6 @@ class Bot(Client):
                         await message.add_reaction(r)
             
             self._actions = []
+    async def on_ready(self):
+        print("Connected as "+str(self.user))
+        self.executeEvent("ready")
