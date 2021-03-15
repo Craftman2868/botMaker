@@ -19,4 +19,7 @@ except TypeError as e:
     else:
         raise
 
-bot.run()
+try:
+    bot.run()
+finally:
+    print("Arrêt du bot")
