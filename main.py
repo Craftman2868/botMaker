@@ -21,5 +21,7 @@ except TypeError as e:
 
 try:
     bot.run()
+except:
+    pass
 finally:
     print("Arrêt du bot")

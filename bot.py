@@ -38,6 +38,7 @@ class Bot(Client):
             self.token = token
             mkfile(self.join("data", "token.txt"), self.token)
             mkdir(self.join("src"))
+            mkfile(self.join("src", "main.py"))
         elif not isdir(self.path):
             raise NotADirectoryError(f"'{self.path}' isn't a directory")
         else:
