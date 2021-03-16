@@ -1,6 +1,5 @@
 def test(bot, msg):
-    msg.react("👍", "😎")
-    msg.reply("J'ai réagi deux fois à ton message ! :sunglasses:")
+    msg.replyEmbed("titre", "description", footer="footer", author="auteur", fields={"titre du champ": "contenu du champ"})
 
 def config(bot, message):
     if len(message.args) == 1:

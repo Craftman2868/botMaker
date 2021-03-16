@@ -4,7 +4,29 @@ from error import ConfigError, FunctionError, CommandError
 from importlib import import_module
 from os.path import relpath, realpath
 import sys
-from discord import Client
+from discord import Client, Embed
+
+def createEmbed(title, description,
+            url=Embed.Empty, color=Embed.Empty,
+            author=None, authorUrl=Embed.Empty, authorIcon=Embed.Empty,
+            footer=Embed.Empty, footerIcon=Embed.Empty,
+            image=Embed.Empty, thumbnail=Embed.Empty,
+            fields={}
+        ):
+    e = Embed(title=title, description=description, url=url, color=color)
+    if not author and authorIcon:
+        author = title
+        e.title = ""
+    if author:
+        e.set_author(name=author, url=authorUrl, icon_url=authorIcon)
+    e.set_footer(text=footer, icon_url=footerIcon)
+    if image:
+        e.set_image(url=image)
+    if thumbnail:
+        e.set_thumbnail(url=thumbnail)
+    for n, v in fields.items():
+        e.add_field(name=n, value=v)
+    return e
 
 class Message:
     def __init__(self, bot, author, message):
@@ -15,6 +37,8 @@ class Message:
         self.bot.action("delete")
     def reply(self, *args):
         self.bot.action("reply", *args)
+    def replyEmbed(self, *args, **kwargs):
+        self.bot.action("embed", createEmbed(*args, **kwargs))
     def react(self, *reactions):
         self.bot.action("react", *reactions)
 
@@ -111,6 +135,8 @@ class Bot(Client):
             args = action[1]
             if name == "reply":
                 await message.channel.send(" ".join(args))
+            elif name == "embed":
+                await message.channel.send(embed=args[0])
             elif name == "delete":
                 await message.delete()
             elif name == "react":
@@ -121,21 +147,19 @@ class Bot(Client):
         if message.content.startswith(self.prefix):
             msg = message.content[len(self.prefix):]
             for cmd in self.commands:
-                if msg.startswith(cmd+" "):
-                    msg = msg[len(cmd)+1:]
-                    self.runCommand(cmd, Command(self, cmd, message.author, message.content))
-                    break
-                elif msg == cmd:
+                if msg.startswith(cmd+" ") or msg == cmd:
                     self.runCommand(cmd, Command(self, cmd, message.author, message.content))
                     break
             else:
-                return
+                self.executeEvent("commandNotFound", Message(self, message.author, message.content))
             
             for action in self._actions:
                 name = action[0]
                 args = action[1]
                 if name == "reply":
                     await message.channel.send(" ".join(args))
+                elif name == "embed":
+                    await message.channel.send(embed=args[0])
                 elif name == "delete":
                     await message.delete()
                 elif name == "react":

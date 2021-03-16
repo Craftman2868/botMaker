@@ -17,9 +17,12 @@ class Config:
     def clear(self):
         self.data = {}
         self.save()
-    def get(self, key):
+    def get(self, key, default=None):
         self.update()
-        return self.data[key]
+        if key in self.data:
+            return self.data[key]
+        else:
+            return default
     __getitem__ = get
     def set(self, key, value):
         if key not in self.data or value != self.get(key):
