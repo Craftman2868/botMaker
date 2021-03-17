@@ -36,11 +36,11 @@ class Message:
     def delete(self):
         self.bot.action("delete")
     def reply(self, *args):
-        self.bot.action("reply", *args)
+        self.bot.action(self, "reply", *args)
     def replyEmbed(self, *args, **kwargs):
-        self.bot.action("embed", createEmbed(*args, **kwargs))
+        self.bot.action(self, "embed", createEmbed(*args, **kwargs))
     def react(self, *reactions):
-        self.bot.action("react", *reactions)
+        self.bot.action(self, "react", *reactions)
 
 class Command(Message):
     def __init__(self, bot, cmd, author, message):
@@ -119,8 +119,8 @@ class Bot(Client):
         return self.runFunction(self.manifest["commands"][name], *args)
     def run(self):
         super().run(self.token)
-    def action(self, name, *args):
-        self._actions.append((name, args))
+    def action(self, message, action, *args):
+        self._actions.append((message, action, args))
     __call__ = action
     def executeEvent(self, name, *args):
         if name in self.events:
@@ -129,10 +129,14 @@ class Bot(Client):
         if message.author == self.user:
             return
 
-        self.executeEvent("message", Message(self, message.author, message.content))
+        m = Message(self, message.author, message.content)
+        self.executeEvent("message", m)
         for action in self._actions:
-            name = action[0]
-            args = action[1]
+            msg = action[0]
+            name = action[1]
+            args = action[2]
+            if msg != m:
+                continue
             if name == "reply":
                 await message.channel.send(" ".join(args))
             elif name == "embed":
@@ -148,14 +152,19 @@ class Bot(Client):
             msg = message.content[len(self.prefix):]
             for cmd in self.commands:
                 if msg.startswith(cmd+" ") or msg == cmd:
-                    self.runCommand(cmd, Command(self, cmd, message.author, message.content))
+                    m = Command(self, cmd, message.author, message.content)
+                    self.runCommand(cmd, m)
                     break
             else:
-                self.executeEvent("commandNotFound", Message(self, message.author, message.content))
+                m = Message(self, message.author, message.content)
+                self.executeEvent("commandNotFound", m)
             
             for action in self._actions:
-                name = action[0]
-                args = action[1]
+                msg = action[0]
+                name = action[1]
+                args = action[2]
+                if msg != m:
+                    continue
                 if name == "reply":
                     await message.channel.send(" ".join(args))
                 elif name == "embed":
