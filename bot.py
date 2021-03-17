@@ -56,8 +56,6 @@ class Bot(Client):
             if not token:
                 raise TypeError("'token' argument is requied if bot don't exist")
             mkdir(self.path)
-            mkdir(self.join("events"))
-            mkdir(self.join("commands"))
             mkdir(self.join("data"))
             self.token = token
             mkfile(self.join("data", "token.txt"), self.token)
