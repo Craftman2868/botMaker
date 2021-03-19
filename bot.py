@@ -29,10 +29,11 @@ def createEmbed(title, description,
     return e
 
 class Message:
-    def __init__(self, bot, author, message):
+    def __init__(self, bot, message):
         self.bot = bot
-        self.author = author
-        self.message = message
+        self._message = message
+        self.author = self._message.author
+        self.message = self._message.content
     def delete(self):
         self.bot.action("delete")
     def reply(self, *args):
@@ -41,12 +42,40 @@ class Message:
         self.bot.action(self, "embed", createEmbed(*args, **kwargs))
     def react(self, *reactions):
         self.bot.action(self, "react", *reactions)
+    def addReactListener(self, reaction, function):
+        if self._message in self.bot._reactListeners:
+            if reaction in self.bot._reactListeners[self._message]:
+                if function not in self.bot._reactListeners[self._message][reaction]:
+                    self.bot._reactListeners[self._message][reaction].append(function)
+            else:
+                self.bot._reactListeners[self._message][reaction] = [function]
+        else:
+            self.bot._reactListeners[self._message] = {reaction: [function]}
+    def addCommand(self, emoji, function):
+        self.react(emoji)
+
+        def callback(bot, reaction):
+            reaction.remove()
+            function(bot, reaction)
+
+        self.addReactListener(emoji, callback)
 
 class Command(Message):
-    def __init__(self, bot, cmd, author, message):
-        super().__init__(bot, author, message)
+    def __init__(self, bot, cmd, message):
+        super().__init__(bot, message)
         self.cmd = cmd
-        self.args = message[len(self.bot.prefix)+len(self.cmd):].split(" ")
+        self.args = self.message[len(self.bot.prefix)+len(self.cmd):].split(" ")
+
+class Reaction:
+    def __init__(self, bot, reaction, user):
+        self.bot = bot
+        self.emoji = reaction.emoji
+        self.user = user
+        self.message = Message(self.bot, reaction.message)
+    def remove(self):
+        self.bot.action(self.message, "removeReact")
+    def react(self):
+        self.message.react(self.emoji)
 
 class Bot(Client):
     def __init__(self, path, token=None):
@@ -74,6 +103,8 @@ class Bot(Client):
         self.functionCache = {}
 
         self._actions = []
+
+        self._reactListeners = {}
 
         super().__init__()
     @property
@@ -118,7 +149,7 @@ class Bot(Client):
     def run(self):
         super().run(self.token)
     def action(self, message, action, *args):
-        self._actions.append((message, action, args))
+        self._actions.append((message._message, action, args))
     __call__ = action
     def executeEvent(self, name, *args):
         if name in self.events:
@@ -127,13 +158,12 @@ class Bot(Client):
         if message.author == self.user:
             return
 
-        m = Message(self, message.author, message.content)
-        self.executeEvent("message", m)
+        self.executeEvent("message", Message(self, message))
         for action in self._actions:
             msg = action[0]
             name = action[1]
             args = action[2]
-            if msg != m:
+            if msg != message:
                 continue
             if name == "reply":
                 await message.channel.send(" ".join(args))
@@ -150,18 +180,16 @@ class Bot(Client):
             msg = message.content[len(self.prefix):]
             for cmd in self.commands:
                 if msg.startswith(cmd+" ") or msg == cmd:
-                    m = Command(self, cmd, message.author, message.content)
-                    self.runCommand(cmd, m)
+                    self.runCommand(cmd, Command(self, cmd, message))
                     break
             else:
-                m = Message(self, message.author, message.content)
-                self.executeEvent("commandNotFound", m)
+                self.executeEvent("commandNotFound", Message(self, message))
             
             for action in self._actions:
                 msg = action[0]
                 name = action[1]
                 args = action[2]
-                if msg != m:
+                if msg != message:
                     continue
                 if name == "reply":
                     await message.channel.send(" ".join(args))
@@ -174,6 +202,31 @@ class Bot(Client):
                         await message.add_reaction(r)
             
             self._actions = []
+    async def on_reaction_add(self, reaction, user):
+        if user == self.user:
+            return
+        if reaction.message in self._reactListeners:
+            if reaction.emoji in self._reactListeners[reaction.message]:
+                for f in self._reactListeners[reaction.message][reaction.emoji]:
+                    f(self, Reaction(self, reaction, user))
+                for action in self._actions:
+                    msg = action[0]
+                    name = action[1]
+                    args = action[2]
+                    if msg != reaction.message:
+                        continue
+                    if name == "reply":
+                        await reaction.message.channel.send(" ".join(args))
+                    elif name == "embed":
+                        await reaction.message.channel.send(embed=args[0])
+                    elif name == "delete":
+                        await reaction.message.delete()
+                    elif name == "removeReact":
+                        await reaction.remove(user)
+                    elif name == "react":
+                        for r in args:
+                            await reaction.message.add_reaction(r)
+                self._actions = []
     async def on_ready(self):
         print("Connected as "+str(self.user))
         self.executeEvent("ready")

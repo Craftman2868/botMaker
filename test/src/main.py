@@ -1,5 +1,5 @@
 def test(bot, msg):
-    msg.replyEmbed("titre", "description", footer="footer", author="auteur", fields={"titre du champ": "contenu du champ"})
+    msg.addCommand("👋", lambda _, r: r.message.reply("test"))
 
 def config(bot, message):
     if len(message.args) == 1:
