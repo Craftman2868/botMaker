@@ -1,5 +1,6 @@
 def test(bot, msg):
-    msg.addCommand("👋", lambda _, r: r.message.reply("test"))
+    msg.reply("aaa", callback=lambda _, m: m.edit("test"))
+    # msg.addCommand("👋", lambda _, r: r.message.reply("test"))
 
 def config(bot, message):
     if len(message.args) == 1:

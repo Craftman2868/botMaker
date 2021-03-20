@@ -36,10 +36,10 @@ class Message:
         self.message = self._message.content
     def delete(self):
         self.bot.action("delete")
-    def reply(self, *args):
-        self.bot.action(self, "reply", *args)
-    def replyEmbed(self, *args, **kwargs):
-        self.bot.action(self, "embed", createEmbed(*args, **kwargs))
+    def reply(self, *args, callback=None):
+        self.bot.action(self, "reply", *args, callback=callback)
+    def replyEmbed(self, *args, callback=None, **kwargs):
+        self.bot.action(self, "embed", createEmbed(*args, **kwargs), callback=callback)
     def react(self, *reactions):
         self.bot.action(self, "react", *reactions)
     def addReactListener(self, reaction, function):
@@ -54,11 +54,15 @@ class Message:
     def addCommand(self, emoji, function):
         self.react(emoji)
 
-        def callback(bot, reaction):
+        def f(bot, reaction):
             reaction.remove()
             function(bot, reaction)
 
-        self.addReactListener(emoji, callback)
+        self.addReactListener(emoji, f)
+
+class OwnMessage(Message):
+    def edit(self, text, callback=None):
+        self.bot.action(self, "edit", text, callback=callback)
 
 class Command(Message):
     def __init__(self, bot, cmd, message):
@@ -148,8 +152,8 @@ class Bot(Client):
         return self.runFunction(self.manifest["commands"][name], *args)
     def run(self):
         super().run(self.token)
-    def action(self, message, action, *args):
-        self._actions.append((message._message, action, args))
+    def action(self, message, action, *args, callback=None):
+        self._actions.append((message._message, action, args, callback))
     __call__ = action
     def executeEvent(self, name, *args):
         if name in self.events:
@@ -159,21 +163,44 @@ class Bot(Client):
             return
 
         self.executeEvent("message", Message(self, message))
-        for action in self._actions:
+        otherMessage = []
+        while self._actions:
+            action = self._actions[0]
             msg = action[0]
             name = action[1]
             args = action[2]
-            if msg != message:
-                continue
-            if name == "reply":
-                await message.channel.send(" ".join(args))
-            elif name == "embed":
-                await message.channel.send(embed=args[0])
-            elif name == "delete":
-                await message.delete()
-            elif name == "react":
-                for r in args:
-                    await message.add_reaction(r)
+            callback = action[3]
+            if msg == message:
+                if name == "reply":
+                    m = await msg.channel.send(" ".join(args))
+                    otherMessage.append(m)
+                    m = OwnMessage(self, m)
+                    if callback:
+                        callback(self, m)
+                elif name == "embed":
+                    await msg.channel.send(embed=args[0])
+                elif name == "delete":
+                    await msg.delete()
+                elif name == "react":
+                    for r in args:
+                        await msg.add_reaction(r)
+            elif msg in otherMessage:
+                if name == "reply":
+                    m = await msg.channel.send(" ".join(args))
+                    otherMessage.append(m)
+                    m = OwnMessage(self, m)
+                    if callback:
+                        callback(self, m)
+                elif name == "embed":
+                    await msg.channel.send(embed=args[0])
+                elif name == "delete":
+                    await msg.delete()
+                elif name == "react":
+                    for r in args:
+                        await msg.add_reaction(r)
+                elif name == "edit":
+                    await msg.edit(" ".join(args))
+            self._actions.remove(action)
 
         self._actions = []
         if message.content.startswith(self.prefix):
@@ -185,23 +212,44 @@ class Bot(Client):
             else:
                 self.executeEvent("commandNotFound", Message(self, message))
             
-            for action in self._actions:
+            otherMessage = []
+            while self._actions:
+                action = self._actions[0]
                 msg = action[0]
                 name = action[1]
                 args = action[2]
-                if msg != message:
-                    continue
-                if name == "reply":
-                    await message.channel.send(" ".join(args))
-                elif name == "embed":
-                    await message.channel.send(embed=args[0])
-                elif name == "delete":
-                    await message.delete()
-                elif name == "react":
-                    for r in args:
-                        await message.add_reaction(r)
-            
-            self._actions = []
+                callback = action[3]
+                if msg == message:
+                    if name == "reply":
+                        m = await msg.channel.send(" ".join(args))
+                        otherMessage.append(m)
+                        m = OwnMessage(self, m)
+                        if callback:
+                            callback(self, m)
+                    elif name == "embed":
+                        await msg.channel.send(embed=args[0])
+                    elif name == "delete":
+                        await msg.delete()
+                    elif name == "react":
+                        for r in args:
+                            await msg.add_reaction(r)
+                elif msg in otherMessage:
+                    if name == "reply":
+                        m = await msg.channel.send(" ".join(args))
+                        otherMessage.append(m)
+                        m = OwnMessage(self, m)
+                        if callback:
+                            callback(self, m)
+                    elif name == "embed":
+                        await msg.channel.send(embed=args[0])
+                    elif name == "delete":
+                        await msg.delete()
+                    elif name == "react":
+                        for r in args:
+                            await msg.add_reaction(r)
+                    elif name == "edit":
+                        await msg.edit(content=" ".join(args))
+                self._actions.remove(action)
     async def on_reaction_add(self, reaction, user):
         if user == self.user:
             return
@@ -209,24 +257,47 @@ class Bot(Client):
             if reaction.emoji in self._reactListeners[reaction.message]:
                 for f in self._reactListeners[reaction.message][reaction.emoji]:
                     f(self, Reaction(self, reaction, user))
-                for action in self._actions:
-                    msg = action[0]
-                    name = action[1]
-                    args = action[2]
-                    if msg != reaction.message:
-                        continue
+            otherMessage = []
+            while self._actions:
+                action = self._actions[0]
+                msg = action[0]
+                name = action[1]
+                args = action[2]
+                callback = action[3]
+                if msg == reaction.message:
                     if name == "reply":
-                        await reaction.message.channel.send(" ".join(args))
+                        m = await msg.channel.send(" ".join(args))
+                        otherMessage.append(m)
+                        m = OwnMessage(self, m)
+                        if callback:
+                            callback(self, m)
                     elif name == "embed":
-                        await reaction.message.channel.send(embed=args[0])
+                        await msg.channel.send(embed=args[0])
                     elif name == "delete":
-                        await reaction.message.delete()
-                    elif name == "removeReact":
-                        await reaction.remove(user)
+                        await msg.delete()
                     elif name == "react":
                         for r in args:
-                            await reaction.message.add_reaction(r)
-                self._actions = []
+                            await msg.add_reaction(r)
+                    elif name == "removeReact":
+                        await reaction.remove(user)
+                elif msg in otherMessage:
+                    if name == "reply":
+                        m = await msg.channel.send(" ".join(args))
+                        otherMessage.append(m)
+                        m = OwnMessage(self, m)
+                        if callback:
+                            callback(self, m)
+                    elif name == "embed":
+                        await msg.channel.send(embed=args[0])
+                    elif name == "delete":
+                        await msg.delete()
+                    elif name == "react":
+                        for r in args:
+                            await msg.add_reaction(r)
+                    elif name == "edit":
+                        await msg.edit(" ".join(args))
+                self._actions.remove(action)
+
     async def on_ready(self):
         print("Connected as "+str(self.user))
         self.executeEvent("ready")
