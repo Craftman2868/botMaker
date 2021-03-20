@@ -199,7 +199,7 @@ class Bot(Client):
                     for r in args:
                         await msg.add_reaction(r)
                 elif name == "edit":
-                    await msg.edit(" ".join(args))
+                    await msg.edit(content=" ".join(args))
             self._actions.remove(action)
 
         self._actions = []
@@ -295,7 +295,7 @@ class Bot(Client):
                         for r in args:
                             await msg.add_reaction(r)
                     elif name == "edit":
-                        await msg.edit(" ".join(args))
+                        await msg.edit(content=" ".join(args))
                 self._actions.remove(action)
 
     async def on_ready(self):
