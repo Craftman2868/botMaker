@@ -5,14 +5,16 @@ from importlib import import_module
 from os.path import relpath, realpath
 import sys
 from discord import Client, Embed
+from asyncio import run_coroutine_threadsafe
+
 
 def createEmbed(title, description,
-            url=Embed.Empty, color=Embed.Empty,
-            author=None, authorUrl=Embed.Empty, authorIcon=Embed.Empty,
-            footer=Embed.Empty, footerIcon=Embed.Empty,
-            image=Embed.Empty, thumbnail=Embed.Empty,
-            fields={}
-        ):
+                url=Embed.Empty, color=Embed.Empty,
+                author=None, authorUrl=Embed.Empty, authorIcon=Embed.Empty,
+                footer=Embed.Empty, footerIcon=Embed.Empty,
+                image=Embed.Empty, thumbnail=Embed.Empty,
+                fields={}
+                ):
     e = Embed(title=title, description=description, url=url, color=color)
     if not author and authorIcon:
         author = title
@@ -28,29 +30,51 @@ def createEmbed(title, description,
         e.add_field(name=n, value=v)
     return e
 
+
 class Message:
     def __init__(self, bot, message):
         self.bot = bot
-        self._message = message
-        self.author = self._message.author
-        self.message = self._message.content
+        self._m = message
+        self.author = self._m.author
+        self.message = self._m.content
+        self._r = None
+
+    def __call__(self, coro, waitResult=False):
+        if waitResult:
+            while self._r:
+                pass
+            def cb(r):
+                self._r = r
+            self.bot(coro, cb)
+            r = self._r
+            self._r = None
+            return r
+        self.bot(coro, cb)
+
     def delete(self):
-        self.bot.action("delete")
-    def reply(self, *args, callback=None):
-        self.bot.action(self, "reply", *args, callback=callback)
+        self(self._m.delete())
+
+    def reply(self, *args):
+        return OwnMessage(self.bot, self(self._m.channel.send(content=" ".join(args)), True))
+
     def replyEmbed(self, *args, callback=None, **kwargs):
-        self.bot.action(self, "embed", createEmbed(*args, **kwargs), callback=callback)
+        return OwnMessage(self.bot, self(self._m.channel.send(embed=createEmbed(*args, **kwargs)), True))
+
     def react(self, *reactions):
-        self.bot.action(self, "react", *reactions)
+        for r in reactions:
+            self(self._m.add_reaction(r))
+
     def addReactListener(self, reaction, function):
-        if self._message in self.bot._reactListeners:
-            if reaction in self.bot._reactListeners[self._message]:
-                if function not in self.bot._reactListeners[self._message][reaction]:
-                    self.bot._reactListeners[self._message][reaction].append(function)
+        if self._m in self.bot._reactListeners:
+            if reaction in self.bot._reactListeners[self._m]:
+                if function not in self.bot._reactListeners[self._m][reaction]:
+                    self.bot._reactListeners[self._m][reaction].append(
+                        function)
             else:
-                self.bot._reactListeners[self._message][reaction] = [function]
+                self.bot._reactListeners[self._m][reaction] = [function]
         else:
-            self.bot._reactListeners[self._message] = {reaction: [function]}
+            self.bot._reactListeners[self._m] = {reaction: [function]}
+
     def addCommand(self, emoji, function):
         self.react(emoji)
 
@@ -60,15 +84,19 @@ class Message:
 
         self.addReactListener(emoji, f)
 
+
 class OwnMessage(Message):
-    def edit(self, text, callback=None):
-        self.bot.action(self, "edit", text, callback=callback)
+    def edit(self, text):
+        return OwnMessage(self.bot, self(self._m.edit(content=text)))
+
 
 class Command(Message):
     def __init__(self, bot, cmd, message):
         super().__init__(bot, message)
         self.cmd = cmd
-        self.args = self.message[len(self.bot.prefix)+len(self.cmd):].split(" ")
+        self.args = self.message[len(
+            self.bot.prefix)+len(self.cmd):].split(" ")
+
 
 class Reaction:
     def __init__(self, bot, reaction, user):
@@ -79,10 +107,13 @@ class Reaction:
             self.message = OwnMessage(self.bot, reaction.message)
         else:
             self.message = Message(self.bot, reaction.message)
+
     def remove(self):
         self.bot.action(self.message, "removeReact")
+
     def react(self):
         self.message.react(self.emoji)
+
 
 class Bot(Client):
     def __init__(self, path, token=None):
@@ -90,7 +121,8 @@ class Bot(Client):
         sys.path.append(self.path)
         if not exist(self.path):
             if not token:
-                raise TypeError("'token' argument is requied if bot don't exist")
+                raise TypeError(
+                    "'token' argument is requied if bot don't exist")
             mkdir(self.path)
             mkdir(self.join("data"))
             self.token = token
@@ -100,7 +132,8 @@ class Bot(Client):
         elif not isdir(self.path):
             raise NotADirectoryError(f"'{self.path}' isn't a directory")
         else:
-            with open(self.join("data", "token.txt"), "r") as f: self.token = f.read()
+            with open(self.join("data", "token.txt"), "r") as f:
+                self.token = f.read()
         self.config = Config(self.join("data", "config.json"))
         self.manifest = Config(self.join("data", "manifest.json"), {"prefix": "<Your prefix>", "commands": {}, "events": {}})
 
@@ -109,19 +142,21 @@ class Bot(Client):
 
         self.functionCache = {}
 
-        self._actions = []
-
         self._reactListeners = {}
 
         super().__init__()
+
     @property
     def prefix(self):
         return self.manifest["prefix"]
+
     @prefix.setter
     def prefix(self, value):
         self.manifest["prefix"] = value
+
     def join(self, *paths):
         return join(self.path, *paths)
+
     def getFunction(self, name):
         if name in self.functionCache:
             return self.functionCache[name]
@@ -140,74 +175,46 @@ class Bot(Client):
         try:
             f = getattr(import_module("src."+path), name)
         except AttributeError:
-            raise FunctionError(f"Function '{name}' not found in '{path}' module")
+            raise FunctionError(
+                f"Function '{name}' not found in '{path}' module")
         except ModuleNotFoundError:
-            raise FileNotFoundError(f"File '{self.join('src', path.replace('.', '/'))}.py' not found")
-        
+            raise FileNotFoundError(
+                f"File '{self.join('src', path.replace('.', '/'))}.py' not found")
+
         self.functionCache[path+":"+name] = f
-        
+
         return f
+
     def runFunction(self, name, *args, **kwargs):
         return self.getFunction(name)(self, *args, **kwargs)
+
     def runCommand(self, name, *args):
         if name not in self.manifest["commands"]:
             raise CommandError(f"Command '{name}' not found")
         return self.runFunction(self.manifest["commands"][name], *args)
+
     def run(self):
         super().run(self.token)
-    def action(self, message, action, *args, callback=None):
-        self._actions.append((message._message, action, args, callback))
-    __call__ = action
+
+    def __call__(self, coro, callback=None):
+        print("New task: "+coro.__name__)
+        t = run_coroutine_threadsafe(coro, self.loop)
+
+        def cb(t):
+            print("End task: "+coro.__name__)
+            if callback: callback(t.result())
+        t.add_done_callback(cb)
+
     def executeEvent(self, name, *args):
         if name in self.events:
-           self.runFunction(self.events[name], *args)
+            self.runFunction(self.events[name], *args)
+
     async def on_message(self, message):
         if message.author == self.user:
             return
 
         self.executeEvent("message", Message(self, message))
-        otherMessage = []
-        while self._actions:
-            action = self._actions[0]
-            msg = action[0]
-            name = action[1]
-            args = action[2]
-            callback = action[3]
-            if msg == message:
-                if name == "reply":
-                    m = await msg.channel.send(" ".join(args))
-                    otherMessage.append(m)
-                    m = OwnMessage(self, m)
-                    if callback:
-                        callback(self, m)
-                elif name == "embed":
-                    await msg.channel.send(embed=args[0])
-                elif name == "delete":
-                    await msg.delete()
-                elif name == "react":
-                    for r in args:
-                        await msg.add_reaction(r)
-                elif name == "edit":
-                    await msg.edit(content=" ".join(args))
-            elif msg in otherMessage:
-                if name == "reply":
-                    m = await msg.channel.send(" ".join(args))
-                    otherMessage.append(m)
-                    m = OwnMessage(self, m)
-                    if callback:
-                        callback(self, m)
-                elif name == "embed":
-                    await msg.channel.send(embed=args[0])
-                elif name == "delete":
-                    await msg.delete()
-                elif name == "react":
-                    for r in args:
-                        await msg.add_reaction(r)
-                elif name == "edit":
-                    await msg.edit(content=" ".join(args))
-            self._actions.remove(action)
 
-        self._actions = []
         if message.content.startswith(self.prefix):
             msg = message.content[len(self.prefix):]
             for cmd in self.commands:
@@ -216,47 +223,7 @@ class Bot(Client):
                     break
             else:
                 self.executeEvent("commandNotFound", Message(self, message))
-            
-            otherMessage = []
-            while self._actions:
-                action = self._actions[0]
-                msg = action[0]
-                name = action[1]
-                args = action[2]
-                callback = action[3]
-                if msg == message:
-                    if name == "reply":
-                        m = await msg.channel.send(" ".join(args))
-                        otherMessage.append(m)
-                        m = OwnMessage(self, m)
-                        if callback:
-                            callback(self, m)
-                    elif name == "embed":
-                        await msg.channel.send(embed=args[0])
-                    elif name == "delete":
-                        await msg.delete()
-                    elif name == "react":
-                        for r in args:
-                            await msg.add_reaction(r)
-                    elif name == "edit":
-                        await msg.edit(content=" ".join(args))
-                elif msg in otherMessage:
-                    if name == "reply":
-                        m = await msg.channel.send(" ".join(args))
-                        otherMessage.append(m)
-                        m = OwnMessage(self, m)
-                        if callback:
-                            callback(self, m)
-                    elif name == "embed":
-                        await msg.channel.send(embed=args[0])
-                    elif name == "delete":
-                        await msg.delete()
-                    elif name == "react":
-                        for r in args:
-                            await msg.add_reaction(r)
-                    elif name == "edit":
-                        await msg.edit(content=" ".join(args))
-                self._actions.remove(action)
+
     async def on_reaction_add(self, reaction, user):
         if user == self.user:
             return
@@ -269,53 +236,6 @@ class Bot(Client):
         if reaction.emoji in self._reactListeners[message]:
             for f in self._reactListeners[message][reaction.emoji]:
                 f(self, Reaction(self, reaction, user))
-        otherMessage = []
-        while self._actions:
-            action = self._actions[0]
-            msg = action[0]
-            name = action[1]
-            args = action[2]
-            callback = action[3]
-            if msg.id == message.id:
-                if name == "reply":
-                    m = await msg.channel.send(" ".join(args))
-                    otherMessage.append(m)
-                    m = OwnMessage(self, m)
-                    if callback:
-                        callback(self, m)
-                elif name == "embed":
-                    await msg.channel.send(embed=args[0])
-                elif name == "delete":
-                    await msg.delete()
-                elif name == "react":
-                    for r in args:
-                        await msg.add_reaction(r)
-                elif name == "removeReact":
-                    await reaction.remove(user)
-                elif name == "edit":
-                    await msg.edit(content=" ".join(args))
-            else:
-                for m in otherMessage:
-                    if msg.id == m.id:
-                        break
-                else:
-                    continue
-                if name == "reply":
-                    m = await msg.channel.send(" ".join(args))
-                    otherMessage.append(m)
-                    m = OwnMessage(self, m)
-                    if callback:
-                        callback(self, m)
-                elif name == "embed":
-                    await msg.channel.send(embed=args[0])
-                elif name == "delete":
-                    await msg.delete()
-                elif name == "react":
-                    for r in args:
-                        await msg.add_reaction(r)
-                elif name == "edit":
-                    await msg.edit(content=" ".join(args))
-            self._actions.remove(action)
 
     async def on_ready(self):
         print("Connected as "+str(self.user))
